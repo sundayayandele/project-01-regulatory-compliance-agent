@@ -1,12 +1,71 @@
-while iteration < max_iterations:
-    response = client.messages.create(tools=tools, messages=messages)
-    
-    if response.stop_reason == "end_turn":
-        break  # Claude decided it's done
-    
-    if response.stop_reason == "tool_use":
-        # Claude wants to call a tool
-        for block in response.content:
-            if block.type == "tool_use":
-                result = dispatch_tool(block.name, block.input)
-                # Give result back to Claude
+name: 🤖 Regulatory Compliance Agent
+
+# ──────────────────────────────────────────────
+# Triggers
+# ──────────────────────────────────────────────
+on:
+  schedule:
+    # Every Monday at 07:00 UTC — before European markets open
+    - cron: "0 7 * * 1"
+
+  # Manual trigger from the Actions tab (great for first run / testing)
+  workflow_dispatch:
+
+# ──────────────────────────────────────────────
+# Permissions
+# GitHub token needs write access to create Issues and commit files
+# ──────────────────────────────────────────────
+permissions:
+  contents: write    # commit compliance-reports/
+  issues: write      # create GitHub Issues
+
+jobs:
+  compliance-agent:
+    name: Run Compliance Agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 30    # safety ceiling — the agentic loop is bounded in code too
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Python ────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ── 3. Dependencies ──────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ── 4. Ensure output directory exists ────────────────────────
+      - name: Ensure compliance-reports directory exists
+        run: mkdir -p compliance-reports
+
+      # ── 5. Run the agent ─────────────────────────────────────────
+      - name: Run Regulatory Compliance Agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          echo "──────────────────────────────────────────"
+          echo "🤖 Starting Regulatory Compliance Agent"
+          echo "   Repository : $GITHUB_REPOSITORY"
+          echo "   Timestamp  : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "──────────────────────────────────────────"
+          python src/agent.py
+
+      # ── 6. Upload run log as artifact (optional but useful) ───────
+      - name: Upload agent log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-agent-log-${{ github.run_id }}
+          path: compliance-reports/
+          retention-days: 90
