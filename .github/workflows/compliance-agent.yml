@@ -1,1 +1,12 @@
-
+while iteration < max_iterations:
+    response = client.messages.create(tools=tools, messages=messages)
+    
+    if response.stop_reason == "end_turn":
+        break  # Claude decided it's done
+    
+    if response.stop_reason == "tool_use":
+        # Claude wants to call a tool
+        for block in response.content:
+            if block.type == "tool_use":
+                result = dispatch_tool(block.name, block.input)
+                # Give result back to Claude
